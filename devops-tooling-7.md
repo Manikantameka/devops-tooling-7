@@ -113,6 +113,7 @@ $ sudo vi /etc/fstab
 $ mount -a
 $ sudo systemctl daemon-reload
 ```
+
 - Setup permissions to allow user, group and anyone to read, write and execute the files within the /mnt/apps, /mnt/logs, /mnt/opt directories.
 
 ```
@@ -122,8 +123,8 @@ $ sudo chmod -R 777 /mnt/opt
 ```
 
 - Change ownership within these directories into *nobody*, by default it will be set to *root*. This is very important because the webservers will be reading, writing to these directories. If it is set to root, the webservers will not be able to read nor write files into these directories
-```
 
+```
 $ sudo chown -R nobody: /mnt/apps
 $ sudo chown -R nobody: /mnt/logs
 $ sudo chown -R nobody: /mnt/opt
@@ -175,11 +176,12 @@ $ sudo systemctl mysqld
 mysql> sudo mysql
 mysql> CREATE DATABASE tooling;
 mysql> CREATE USER `webaccess`@`<Nfs-Server-Subnet-Cidr>` IDENTIFIED BY 'password';
-mysql> GRANT ALL ON wordpress.* TO 'user'@'<Nfs-Server-Subnet-Cidr>';
+mysql> GRANT ALL ON tooling.* TO 'webaccess'@'<Nfs-Server-Subnet-Cidr>';
 mysql> FLUSH PRIVILEGES;
 mysql> SHOW DATABASES;
 mysql> exit
 ```
+
 # **Launch EC2 Instances for Web Servers**
 - Install nfs client package
 
@@ -187,4 +189,111 @@ mysql> exit
 $ sudo yum install nfs-utils nfs4-acl-tools -y
 ```
 
-- 
+- Install apache
+
+```
+$ sudo yum install httpd -y
+```
+
+- Create the /var/www directory and mount the nfs exports for the apps i.e /mnt/apps
+
+```
+$ sudo mount -t nfs -o rw,nosuid <NFS-Server-Private-IP-Address>:/mnt/apps /var/www
+```
+
+- Mount /var/log on the nfs exports for logs i.e /mnt/logs. Before performing this action, all of the log files from the /var/log directory have to be copied and stored in another directory(/home/logs). The log files are very important for the functions of the virtual machine. In an instance where this isn't done, all of the log files will be deleted.
+
+```
+$ sudo rsync -av /var/log/. /home/logs
+```
+
+- Perform the mount
+
+```
+$ sudo mount -t nfs -o rw,nosuid <NFS-Server-Private-IP-Address>:/mnt/logs /var/log
+```
+
+- Copy the files back into the /var/log directory
+
+```
+$ sudo rsync -av /home/logs/. /var/log
+```
+
+- Persist the configuration, by adding the following in the /etc/fstab file.
+
+```
+172.31.17.143:/mnt/apps /var/www nfs defaults 0 0
+172.31.17.143:/mnt/logs /var/log nfs defaults 0 0
+```
+
+![10](https://user-images.githubusercontent.com/47898882/128255321-94192f00-044f-496e-9156-77826aea4613.JPG)
+
+- Verify the nfs server was properly mounted on the webserver. To do this create a file in the /var/www directory of the ebserver and check /mnt/apps of the nfs to find out if the same file can be found. If it is found, then the mount was successful.
+
+- Fork this [repo](https://github.com/darey-io/tooling). This is where all the files to be served will be gotten from.
+
+- Install git and clone repo
+
+```
+$ sudo yum install git -y
+$ git clone https://github.com/darey-io//tooling
+```
+
+- The folder *tooling* will be cloned to your root directory. Copy the html folder in that folder into the html folder in the /var/www/html directory.
+
+```
+$ sudo rsync -av html/. /var/www/html
+```
+
+- Install MySQL on the webserver in order to be able to communicate with the database server
+
+```
+$ sudo yum install mysql-server
+```
+
+- Populate the database with the users table. Within the tooling folder, an sql script called tooling-db.sql will be found. To perform this action, use the command below.
+
+```
+$ sudo mysql -u <database-ipaddress> -h -p tooling<tooling-db.sql
+```
+
+- Install php and all it's dependencies
+
+```
+$ sudo yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+$ sudo yum install yum-utils http://rpms.remirepo.net/enterprise/remi-release-8.rpm
+$ sudo yum module list php
+$ sudo yum module reset php
+$ sudo yum module enable php:remi-7.4
+$ sudo yum install php php-opcache php-gd php-curl php-mysqlnd
+$ sudo systemctl start php-fpm
+$ sudo systemctl enable php-fpm
+$ sudo setsebool -P httpd_execmem 1
+$ sudo setsebool -P httpd_can_network_connect=1
+$ sudo setsebool -P httpd_can_network_connect_db=1
+```
+
+- Enable & start the php-fpm service.
+
+- You can test your setup, but before you do so, if you check the status of your httpd service it'll be inactive. This happens due to the fact that SELinux is enabled. Security Enhanced Linux (selinux) is an extra layer of security enabled by default on Redhat and CentOS linux distributions. At this point SELinux has blocked port 80 which is meant to be used to access the website over the web. In other words, ports need to be added to a context or it will appear that they are blocked, even though they have been opened in the firewall. To combat this issue, use the *semange* command. The command semanage is used to view and change selinux configuration settings.
+
+```
+$ sudo semanage port -a -t http_port_t -p tcp 80
+```
+
+- Another alternative is to run `sudo setenforce 0` and set SELinux to disabled in the /etc/sysconfig/selinux directory. Due to the fact that SELinux adds an extra layer of security. I'll advise to go with the first option
+
+- Restart apache and php-fpm services
+
+```
+$ sudo systemctl restart httpd
+$ sudo systemctl restart php-fpm
+```
+
+- Copy the public ip addrsee of your instance and test your setup in your web browser.
+
+![11](https://user-images.githubusercontent.com/47898882/128258621-3663f225-1f93-4bc3-806e-32934e456719.JPG)
+
+![12](https://user-images.githubusercontent.com/47898882/128258630-e2ae21ba-cf6b-4756-a59c-67b0c115fe1b.JPG)
+
+Congratulations!!. We have succesfully created our whole setup and deployed the devops tooling website on AWS.
