@@ -273,8 +273,6 @@ $ sudo setsebool -P httpd_can_network_connect=1
 $ sudo setsebool -P httpd_can_network_connect_db=1
 ```
 
-- Enable & start the php-fpm service.
-
 - You can test your setup, but before you do so, if you check the status of your httpd service it'll be inactive. This happens due to the fact that SELinux is enabled. Security Enhanced Linux (selinux) is an extra layer of security enabled by default on Redhat and CentOS linux distributions. At this point SELinux has blocked port 80 which is meant to be used to access the website over the web. In other words, ports need to be added to a context or it will appear that they are blocked, even though they have been opened in the firewall. To combat this issue, use the *semange* command. The command semanage is used to view and change selinux configuration settings.
 
 ```
